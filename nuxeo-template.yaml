@@ -31,10 +31,6 @@ parameters:
     name: APPLICATION_URL
     value: nuxeo.apps.io.nuxeo.com
     required: true
-  - description: Backings template name
-    name: NUXEO_BACKINGS_NAME
-    value: nuxeo-backings
-    required: true
   - description: A Nuxeo Connect userId passed to the build of the image.
     name: NUXEO_CONNECT_USERNAME
     required: false
@@ -48,14 +44,34 @@ parameters:
     name: NUXEO_STUDIO_VERSION
     required: false
     value: 0.0.0-SNAPSHOT
-  - description: Name of the MongoDB replica set
-    name: MONGODB_REPLICASET_NAME
-    value: rs0
+  - description: Name of the MongoDB secret
+    name: MONGODB_SECRET_NAME
+    value: mongodb
+    required: true
+  - description: Elasticsearch client service name
+    name: ELASTICSEARCH_CLIENT_SERVICE_NAME
+    value: elasticsearch-client
+    required: true
+  - description: Elasticsearch master service name
+    name: ELASTICSEARCH_MASTER_SERVICE_NAME
+    value: elasticsearch-master
     required: true
   - description: Elasticsearch cluster name
     name: ELASTICSEARCH_CLUSTER_NAME
     value: nuxeo
     required: true
+  - description: Kafka service name
+    name: KAFKA_SERVICE_NAME
+    value: kafka-broker-headless
+    required: true
+  - description: Zookeeper service name
+    name: ZOOKEEPER_SERVICE_NAME
+    value: zookeeper
+    required: true
+  - description: Binaries volume storage class
+    displayName: Binaries volume storage class
+    name: BINARIES_VOLUME_STORAGE_CLASS_NAME
+    value: ""
   - description: Size of persistent storage for Binaries.
     name: VOLUME_BINARIES_CAPACITY
     value: 50Gi
@@ -86,13 +102,17 @@ objects:
       app: ${APPLICATION_NAME}
   spec:
     dockerImageRepository: nuxeo
+## Below is temporary
+    tags:
+    - name: "latest"
+      from:
+        kind: DockerImage
+        name: registry.access.redhat.com/nuxeo/nuxeo:9.10
 
 
 - apiVersion: v1
   kind: PersistentVolumeClaim
   metadata:
-    annotations:
-      volume.beta.kubernetes.io/storage-class: gluster-cns-slow
     creationTimestamp: null
     name: ${APPLICATION_NAME}-binaries
     labels:
@@ -104,6 +124,8 @@ objects:
     resources:
       requests:
         storage: ${VOLUME_BINARIES_CAPACITY}
+    storageClassName: "${BINARIES_VOLUME_STORAGE_CLASS_NAME}"
+
 
 - apiVersion: v1
   kind: ConfigMap
@@ -116,7 +138,7 @@ objects:
     nuxeo.conf: |
       # Additional nuxeo.conf parameters      
     init.sh: |
-      #!/bin/sh
+      #!/bin/bash
 
       ## Need to use nss_wrapper in order to make LibreOffice conversion works
       ## cf https://docs.openshift.com/enterprise/3.2/creating_images/guidelines.html
@@ -128,7 +150,7 @@ objects:
       nuxeo:x:${USER_ID}:${GROUP_ID}:Nuxeo server:/opt/nuxeo/server:/bin/bash
       EOT
 
-      export LD_PRELOAD=/usr/lib/libnss_wrapper.so
+      ######export LD_PRELOAD=/usr/lib/libnss_wrapper.so
       export NSS_WRAPPER_PASSWD=/tmp/passwd
       export NSS_WRAPPER_GROUP=/etc/group
 
@@ -139,6 +161,15 @@ objects:
           nuxeoctl register $NUXEO_CONNECT_USERNAME $NUXEO_STUDIO_PROJECT dev openshift $NUXEO_CONNECT_PASSWORD
         fi
       fi
+
+      ## Set mongodb nuxeo.conf properties: nuxeo.mongodb.server, nuxeo.mongodb.dbname
+      export MONGODB_HOSTS=$(DOMAIN=`hostname -d`; \
+          for ((i=0; i<$MONGODB_REPLICA_COUNT; i++)); do \
+              echo -n "$MONGODB_SERVICE_NAME-$i.$DOMAIN,"; \
+          done| sed 's/,$//')
+      echo $MONGODB_HOSTS > /tmp/mongodb_hosts.out
+      perl -p -i -e "s/^#?nuxeo.mongodb.server=.*$/nuxeo.mongodb.server=mongodb:\/\/${MONGODB_USER}:${MONGODB_PASSWORD}@${MONGODB_HOSTS}\/${MONGODB_DATABASE_NAME}?replicaSet=${MONGODB_REPLICA_NAME}/g" $NUXEO_CONF
+
 
 - apiVersion: v1
   kind: DeploymentConfig
@@ -199,31 +230,60 @@ objects:
             timeoutSeconds: 5
           name: ${APPLICATION_NAME}-appserver
           env:
+          - name: MONGODB_SERVICE_NAME
+            valueFrom:
+              secretKeyRef:
+                name: mongodb
+                key: database-service-name
+          - name: MONGODB_DATABASE_NAME
+            valueFrom:
+              secretKeyRef:
+                name: mongodb
+                key: database-name
+          - name: MONGODB_USER
+            valueFrom:
+              secretKeyRef:
+                name: mongodb
+                key: database-user
+          - name: MONGODB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: mongodb
+                key: database-password
+          - name: MONGODB_REPLICA_NAME
+            valueFrom:
+              secretKeyRef:
+                name: mongodb
+                key: database-replica-name
+          - name: MONGODB_REPLICA_COUNT
+            valueFrom:
+              secretKeyRef:
+                name: mongodb
+                key: database-replica-count
+
           - name: NUXEO_TEMPLATES
             value: "default,mongodb,mongodb-audit"
-          - name: NUXEO_CUSTOM_PARAM
+          - name: NUXEO_CUSTOM_PARAM_disabled
             value: |
-              nuxeo.mongodb.server=mongodb://${NUXEO_BACKINGS_NAME}-mongo-0.${NUXEO_BACKINGS_NAME}-mongo:27017,${NUXEO_BACKINGS_NAME}-mongo-1.${NUXEO_BACKINGS_NAME}-mongo:27017,${NUXEO_BACKINGS_NAME}-mongo-2.${NUXEO_BACKINGS_NAME}-mongo:27017
-              nuxeo.mongodb.dbname=${APPLICATION_NAME}
               kafka.enabled=true
               nuxeo.stream.work.enabled=true
-              kafka.zkServers=${NUXEO_BACKINGS_NAME}-zookeeper:2181              
-              kafka.bootstrap.servers=${NUXEO_BACKINGS_NAME}-kafka-0.${NUXEO_BACKINGS_NAME}-kafka:9092,${NUXEO_BACKINGS_NAME}-kafka-1.${NUXEO_BACKINGS_NAME}-kafka:9092,${NUXEO_BACKINGS_NAME}-kafka-2.${NUXEO_BACKINGS_NAME}-kafka:9092
+              kafka.zkServers=${ZOOKEEPER_SERVICE_NAME}:2181
+              kafka.bootstrap.servers=${KAFKA_SERVICE_NAME}-0.${KAFKA_SERVICE_NAME}:9092,${KAFKA_SERVICE_NAME}-1.${KAFKA_SERVICE_NAME}:9092,${KAFKA_SERVICE_NAME}-2.${KAFKA_SERVICE_NAME}:9092
               kafka.topicPrefix=${APPLICATION_NAME}-
               elasticsearch.client=RestClient
-              elasticsearch.httpReadOnly.baseUrl=http://${NUXEO_BACKINGS_NAME}-elasticsearch:9200
+              elasticsearch.httpReadOnly.baseUrl=http://${ELASTICSEARCH_CLIENT_SERVICE_NAME}:9200
               elasticsearch.indexName=${APPLICATION_NAME}
               # No Redis, so we don't use DBS cache
               nuxeo.dbs.cache.enabled=false
               
           - name: NUXEO_PACKAGES
             value: nuxeo-jsf-ui nuxeo-web-ui
-          - name: NUXEO_ES_HOSTS
-            value: ${NUXEO_BACKINGS_NAME}-elasticsearch-discovery:9200
-          - name: NUXEO_ES_CLUSTERNAME
-            value: ${ELASTICSEARCH_CLUSTER_NAME}
-          - name: NUXEO_ES_REPLICAS
-            value: "2"
+#          - name: NUXEO_ES_HOSTS
+#            value: ${ELASTICSEARCH_MASTER_SERVICE_NAME}:9200
+#          - name: NUXEO_ES_CLUSTERNAME
+#            value: ${ELASTICSEARCH_CLUSTER_NAME}
+#          - name: NUXEO_ES_REPLICAS
+#            value: "2"
           - name: NUXEO_BINARY_STORE
             value: /binaries
 
@@ -264,7 +324,8 @@ objects:
         from:
           kind: ImageStreamTag
           name: ${APPLICATION_NAME}-nuxeo:latest
-      
+
+
 - apiVersion: v1
   kind: Service
   metadata:
