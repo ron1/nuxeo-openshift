@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ImageStream
+metadata:
+  name: nuxeo
+  annotations:
+    openshift.io/display-name: Nuxeo
+spec:
+  spec:
+    dockerImageRepository: docker.io/nuxeo/nuxeo
+    lookupPolicy:
+      local: true

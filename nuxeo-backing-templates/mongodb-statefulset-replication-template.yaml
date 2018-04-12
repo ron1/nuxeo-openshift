@@ -10,7 +10,7 @@ message: |-
     Database Name: ${MONGODB_DATABASE}
    Connection URL: mongodb://${MONGODB_USER}:${MONGODB_PASSWORD}@${MONGODB_SERVICE_NAME}/${MONGODB_DATABASE}
 
-  For more information about using this template, including OpenShift considerations, see https://github.com/sclorg/mongodb-container/blob/master/${MONGODB_VERSION}/README.md.
+  For more information about using this template, including OpenShift considerations, see https://github.com/sclorg/mongodb-container/blob/master/3.4/README.md.
 metadata:
   annotations:
     description: |-
@@ -34,29 +34,29 @@ objects:
   kind: Secret
   metadata:
     annotations:
-      template.openshift.io/expose-admin_password: '{.data[''database-admin-password'']}'
-      template.openshift.io/expose-database_name: '{.data[''database-name'']}'
-      template.openshift.io/expose-keyfile_value: '{.data[''database-keyfile-value'']}'
-      template.openshift.io/expose-password: '{.data[''database-password'']}'
-      template.openshift.io/expose-replica_name: '{.data[''database-replica-name'']}'
-      template.openshift.io/expose-username: '{.data[''database-user'']}'
-      template.openshift.io/expose-service_name: '{.data[''database-service-name'']}'
-      template.openshift.io/expose-replica_count: '{.data[''database-replica-count'']}'
+      template.openshift.io/expose-admin_password: '{.data[''mongodb-admin-password'']}'
+      template.openshift.io/expose-database_name: '{.data[''mongodb-database-name'']}'
+      template.openshift.io/expose-keyfile_value: '{.data[''mongodb-keyfile-value'']}'
+      template.openshift.io/expose-password: '{.data[''mongodb-password'']}'
+      template.openshift.io/expose-replica_name: '{.data[''mongodb-replica-name'']}'
+      template.openshift.io/expose-username: '{.data[''mongodb-user'']}'
+      template.openshift.io/expose-service_name: '{.data[''mongodb-service-name'']}'
+      template.openshift.io/expose-replica_count: '{.data[''mongodb-replica-count'']}'
     name: ${MONGODB_SERVICE_NAME}
   stringData:
-    database-admin-password: ${MONGODB_ADMIN_PASSWORD}
-    database-keyfile-value: ${MONGODB_KEYFILE_VALUE}
-    database-name: ${MONGODB_DATABASE}
-    database-password: ${MONGODB_PASSWORD}
-    database-replica-name: ${MONGODB_REPLICA_NAME}
-    database-user: ${MONGODB_USER}
-    database-service-name: ${MONGODB_SERVICE_NAME}-internal
-    database-replica-count: ${MONGODB_REPLICA_COUNT}
+    mongodb-admin-password: ${MONGODB_ADMIN_PASSWORD}
+    mongodb-keyfile-value: ${MONGODB_KEYFILE_VALUE}
+    mongodb-database-name: ${MONGODB_DATABASE}
+    mongodb-password: ${MONGODB_PASSWORD}
+    mongodb-replica-name: ${MONGODB_REPLICA_NAME}
+    mongodb-user: ${MONGODB_USER}
+    mongodb-service-name: ${MONGODB_SERVICE_NAME}
+    mongodb-replica-count: ${MONGODB_REPLICA_COUNT}
 - apiVersion: v1
   kind: Service
   metadata:
     annotations:
-      template.openshift.io/expose-uri: mongodb://{.spec.clusterIP}:{.spec.ports[?(.name=="mongo")].port}
+      template.openshift.io/expose-mongodb_service_uri: mongodb://{.spec.clusterIP}:{.spec.ports[?(.name=="mongo")].port}/${MONGODB_DATABASE}?replicaSet=${MONGODB_REPLICA_NAME}
     name: ${MONGODB_SERVICE_NAME}
   spec:
     ports:
@@ -112,36 +112,36 @@ objects:
           - name: MONGODB_USER
             valueFrom:
               secretKeyRef:
-                key: database-user
+                key: mongodb-user
                 name: ${MONGODB_SERVICE_NAME}
           - name: MONGODB_PASSWORD
             valueFrom:
               secretKeyRef:
-                key: database-password
+                key: mongodb-password
                 name: ${MONGODB_SERVICE_NAME}
           - name: MONGODB_ADMIN_PASSWORD
             valueFrom:
               secretKeyRef:
-                key: database-admin-password
+                key: mongodb-admin-password
                 name: ${MONGODB_SERVICE_NAME}
           - name: MONGODB_DATABASE
             valueFrom:
               secretKeyRef:
-                key: database-name
+                key: mongodb-database-name
                 name: ${MONGODB_SERVICE_NAME}
           - name: MONGODB_REPLICA_NAME
             valueFrom:
               secretKeyRef:
-                key: database-replica-name
+                key: mongodb-replica-name
                 name: ${MONGODB_SERVICE_NAME}
           - name: MONGODB_KEYFILE_VALUE
             valueFrom:
               secretKeyRef:
-                key: database-keyfile-value
+                key: mongodb-keyfile-value
                 name: ${MONGODB_SERVICE_NAME}
           - name: MONGODB_SERVICE_NAME
             value: ${MONGODB_SERVICE_NAME}-internal
-          image: registry.access.redhat.com/rhscl/mongodb-34-rhel7
+          image: ${IMAGE_NAME}
           imagePullPolicy: IfNotPresent
           livenessProbe:
             initialDelaySeconds: 30
@@ -174,18 +174,6 @@ objects:
           volumeMounts:
           - mountPath: /var/lib/mongodb/data
             name: ${MONGODB_SERVICE_NAME}-data
-    triggers:
-    - imageChangeParams:
-        automatic: true
-        containerNames:
-        - mongodb
-        from:
-          kind: ImageStreamTag
-          name: mongodb:${MONGODB_VERSION}
-          namespace: ${NAMESPACE}
-        lastTriggeredImage: ""
-      type: ImageChange
-    - type: ConfigChange
     volumeClaimTemplates:
     - metadata:
         name: ${MONGODB_SERVICE_NAME}-data
@@ -254,11 +242,6 @@ parameters:
   displayName: Volume Capacity
   name: VOLUME_CAPACITY
   value: 1Gi
-  required: true
-- description: Version of MongoDB image to be used (2.4, 2.6, 3.2, 3.4 or latest).
-  displayName: Version of MongoDB Image
-  name: MONGODB_VERSION
-  value: "3.4"
   required: true
 - description: Name of the MongoDB image.
   displayName: Name of the MongoDB image

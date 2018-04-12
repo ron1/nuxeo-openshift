@@ -31,6 +31,14 @@ parameters:
     name: APPLICATION_URL
     value: nuxeo.apps.io.nuxeo.com
     required: true
+  - description: The ImageStream name
+    name: IMAGE_NAME
+    value: "nuxeo"
+    required: true
+  - description: The ImageStream tag
+    name: IMAGE_TAG
+    value: "latest"
+    required: true
   - description: A Nuxeo Connect userId passed to the build of the image.
     name: NUXEO_CONNECT_USERNAME
     required: false
@@ -94,23 +102,6 @@ objects:
 
 
 - apiVersion: v1
-  kind: ImageStream
-  metadata:      
-    creationTimestamp: null
-    name: ${APPLICATION_NAME}-nuxeo
-    labels:
-      app: ${APPLICATION_NAME}
-  spec:
-    dockerImageRepository: nuxeo
-## Below is temporary
-    tags:
-    - name: "latest"
-      from:
-        kind: DockerImage
-        name: registry.access.redhat.com/nuxeo/nuxeo:9.10
-
-
-- apiVersion: v1
   kind: PersistentVolumeClaim
   metadata:
     creationTimestamp: null
@@ -136,7 +127,9 @@ objects:
       role: config
   data:
     nuxeo.conf: |
-      # Additional nuxeo.conf parameters      
+      # Additional nuxeo.conf parameters
+      # Set mongodb nuxeo.conf property nuxeo.mongodb.server to use loadbalancer service
+      nuxeo.mongodb.server=mongodb://${env:MONGODB_USER}:${env:MONGODB_PASSWORD}@${env:MONGODB_SERVICE_NAME}/${env:MONGODB_DATABASE_NAME}?replicaSet=${env:MONGODB_REPLICA_NAME}
     init.sh: |
       #!/bin/bash
 
@@ -162,13 +155,15 @@ objects:
         fi
       fi
 
-      ## Set mongodb nuxeo.conf properties: nuxeo.mongodb.server, nuxeo.mongodb.dbname
-      export MONGODB_HOSTS=$(DOMAIN=`hostname -d`; \
-          for ((i=0; i<$MONGODB_REPLICA_COUNT; i++)); do \
-              echo -n "$MONGODB_SERVICE_NAME-$i.$DOMAIN,"; \
-          done| sed 's/,$//')
-      echo $MONGODB_HOSTS > /tmp/mongodb_hosts.out
-      perl -p -i -e "s/^#?nuxeo.mongodb.server=.*$/nuxeo.mongodb.server=mongodb:\/\/${MONGODB_USER}:${MONGODB_PASSWORD}@${MONGODB_HOSTS}\/${MONGODB_DATABASE_NAME}?replicaSet=${MONGODB_REPLICA_NAME}/g" $NUXEO_CONF
+      ## Set mongodb nuxeo.conf property nuxeo.mongodb.server to use headlesss service
+      #MONGODB_HOSTS=$(DOMAIN=`grep search /etc/resolv.conf | cut -d ' ' -f 2`; \
+      #    for ((i=0; i<$MONGODB_REPLICA_COUNT; i++)); do \
+      #        echo -n "$MONGODB_SERVICE_NAME-$i.$MONGODB_SERVICE_NAME-internal.$DOMAIN,"; \
+      #    done| sed 's/,$//')
+      #MONGODB_URL=mongodb://${MONGODB_USER}:${MONGODB_PASSWORD}@${MONGODB_HOSTS}/${MONGODB_DATABASE_NAME}?replicaSet=${MONGODB_REPLICA_NAME}
+      #grep -q "^nuxeo.mongodb.server=" $NUXEO_CONF && \
+      #    sed "s#^nuxeo.mongodb.server=.*#nuxeo.mongodb.server=$MONGODB_URL#" -i $NUXEO_CONF || \
+      #    sed "$ a\nuxeo.mongodb.server=$MONGODB_URL\n" -i $NUXEO_CONF
 
 
 - apiVersion: v1
@@ -206,7 +201,7 @@ objects:
           deploymentconfig: ${APPLICATION_NAME}-nuxeo
       spec:
         containers:
-        - image: ${APPLICATION_NAME}-nuxeo:latest
+        - image: ${IMAGE_NAME}:${IMAGE_TAG}
           imagePullPolicy: Always
           livenessProbe:
             httpGet:
@@ -234,50 +229,52 @@ objects:
             valueFrom:
               secretKeyRef:
                 name: mongodb
-                key: database-service-name
+                key: mongodb-service-name
           - name: MONGODB_DATABASE_NAME
             valueFrom:
               secretKeyRef:
                 name: mongodb
-                key: database-name
+                key: mongodb-database-name
           - name: MONGODB_USER
             valueFrom:
               secretKeyRef:
                 name: mongodb
-                key: database-user
+                key: mongodb-user
           - name: MONGODB_PASSWORD
             valueFrom:
               secretKeyRef:
                 name: mongodb
-                key: database-password
+                key: mongodb-password
           - name: MONGODB_REPLICA_NAME
             valueFrom:
               secretKeyRef:
                 name: mongodb
-                key: database-replica-name
+                key: mongodb-replica-name
           - name: MONGODB_REPLICA_COUNT
             valueFrom:
               secretKeyRef:
                 name: mongodb
-                key: database-replica-count
+                key: mongodb-replica-count
 
           - name: NUXEO_TEMPLATES
             value: "default,mongodb,mongodb-audit"
-          - name: NUXEO_CUSTOM_PARAM_disabled
+          - name: NUXEO_CUSTOM_PARAM
             value: |
-              kafka.enabled=true
-              nuxeo.stream.work.enabled=true
+              org.nuxeo.connect.server.reachable=false
+              #kafka.enabled=true
+              #nuxeo.stream.work.enabled=true
               kafka.zkServers=${ZOOKEEPER_SERVICE_NAME}:2181
               kafka.bootstrap.servers=${KAFKA_SERVICE_NAME}-0.${KAFKA_SERVICE_NAME}:9092,${KAFKA_SERVICE_NAME}-1.${KAFKA_SERVICE_NAME}:9092,${KAFKA_SERVICE_NAME}-2.${KAFKA_SERVICE_NAME}:9092
               kafka.topicPrefix=${APPLICATION_NAME}-
-              elasticsearch.client=RestClient
-              elasticsearch.httpReadOnly.baseUrl=http://${ELASTICSEARCH_CLIENT_SERVICE_NAME}:9200
+              #elasticsearch.client=RestClient
+              #elasticsearch.httpReadOnly.baseUrl=http://${ELASTICSEARCH_CLIENT_SERVICE_NAME}:9200
               elasticsearch.indexName=${APPLICATION_NAME}
               # No Redis, so we don't use DBS cache
               nuxeo.dbs.cache.enabled=false
               
           - name: NUXEO_PACKAGES
-            value: nuxeo-jsf-ui nuxeo-web-ui
+            value: nuxeo-web-ui
+#            value: nuxeo-jsf-ui nuxeo-web-ui
 #          - name: NUXEO_ES_HOSTS
 #            value: ${ELASTICSEARCH_MASTER_SERVICE_NAME}:9200
 #          - name: NUXEO_ES_CLUSTERNAME
@@ -311,8 +308,7 @@ objects:
         dnsPolicy: ClusterFirst
         restartPolicy: Always
         terminationGracePeriodSeconds: 30
-        
-        
+
     test: false
     triggers:
     - type: ConfigChange
@@ -323,7 +319,7 @@ objects:
         - ${APPLICATION_NAME}-appserver
         from:
           kind: ImageStreamTag
-          name: ${APPLICATION_NAME}-nuxeo:latest
+          name: ${IMAGE_NAME}:${IMAGE_TAG}
 
 
 - apiVersion: v1
@@ -344,6 +340,7 @@ objects:
       port: 8080
       protocol: TCP
 
+
 - apiVersion: v1
   kind: Route
   metadata:
@@ -359,4 +356,3 @@ objects:
     port:
       targetPort: 8080-tcp
     wildcardPolicy: None
-

@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ImageStream
+metadata:
+  name: nuxeo
+  annotations:
+    openshift.io/display-name: Nuxeo (rhel7)
+spec:
+  spec:
+    dockerImageRepository: registry.connect.redhat.com/nuxeo/nuxeo
+    lookupPolicy:
+      local: true
