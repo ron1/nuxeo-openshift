@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-
 # Copyright 2016 The Kubernetes Authors. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,6 +21,9 @@ if [[ "$AUTH" == "true" ]]; then
     admin_password="$ADMIN_PASSWORD"
     admin_creds=(-u "$admin_user" -p "$admin_password")
     auth_args=(--auth --keyFile=/data/configdb/key.txt)
+    user="$MONGO_INITDB_USER"
+    password="$MONGO_INITDB_PASSWORD"
+    database="$MONGO_INITDB_DATABASE"
 fi
 
 function log() {
@@ -60,7 +62,8 @@ if [ -f "$ca_crt"  ]; then
     ca_key=/data/configdb/tls.key
     pem=/work-dir/mongo.pem
     ssl_args=(--ssl --sslCAFile "$ca_crt" --sslPEMKeyFile "$pem")
-
+    ssl_server_args=(--sslMode requireSSL --sslCAFile "$ca_crt" --sslPEMKeyFile "$pem")
+    pushd /work-dir
 cat >openssl.cnf <<EOL
 [req]
 req_extensions = v3_req
@@ -80,7 +83,7 @@ EOL
 
     # Generate the certs
     openssl genrsa -out mongo.key 2048
-    openssl req -new -key mongo.key -out mongo.csr -subj "/CN=$my_hostname" -config openssl.cnf
+    openssl req -new -key mongo.key -out mongo.csr -subj "/CN=$my_hostname/OU=${NUXEO_BACKINGS_NAME}/O=nuxeo" -config openssl.cnf
     openssl x509 -req -in mongo.csr \
         -CA "$ca_crt" -CAkey "$ca_key" -CAcreateserial \
         -out mongo.crt -days 3650 -extensions v3_req -extfile openssl.cnf
@@ -89,12 +92,19 @@ EOL
     cat mongo.crt mongo.key > $pem
     rm mongo.key mongo.crt
 fi
-
+popd
 
 log "Peers: ${peers[*]}"
 
+if [ -z ${peers[*]} ]; then
+  # First node to bootstrap, only local connection is allowed as it's not authenticated
+  unset auth_args
+else
+  auth_args="--auth --clusterAuthMode x509"
+fi
+
 log "Starting a MongoDB instance..."
-mongod --config /data/configdb/mongod.conf --dbpath=/data/db --replSet="$replica_set" --port=27017 "${auth_args[@]}" --bind_ip_all >> /work-dir/log.txt 2>&1 &
+mongod --config /data/configdb/mongod.conf --dbpath=/data/db --replSet="$replica_set" --port=27017 ${auth_args} "${ssl_server_args[@]}" --bind_ip 0.0.0.0 >> /work-dir/log.txt 2>&1 &
 
 log "Waiting for MongoDB to be ready..."
 until mongo "${ssl_args[@]}" --eval "db.adminCommand('ping')"; do
@@ -143,6 +153,10 @@ if mongo "${ssl_args[@]}" --eval "rs.status()" | grep "no replset config has bee
     if [[ "$AUTH" == "true" ]]; then
         log "Creating admin user..."
         mongo admin "${ssl_args[@]}" --eval "db.createUser({user: '$admin_user', pwd: '$admin_password', roles: [{role: 'root', db: 'admin'}]})"
+
+        log "Creating user '$user' in database '$database'..."
+        mongo "${admin_creds[@]}" "${ssl_args[@]}" --authenticationDatabase='admin' "$database" \
+            --eval "db.createUser({user: '$user', pwd: '$password', roles: [{role: 'dbAdmin', db: '$database'}]})"
     fi
 
     log "Done."

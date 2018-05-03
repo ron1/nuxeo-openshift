@@ -21,3 +21,10 @@
     - not poddisruptionbudget_lookup or not (podDisruptionBudget is defined and (podDisruptionBudget | from_yaml))
     - not statefulset_lookup
     - not service_lookup
+
+
+- name: "Verify statefulset persistentvolumeclaim objects removed"
+  shell: kubectl get persistentvolumeclaim {{ item }}
+  register: kubectl_cmd
+  failed_when: kubectl_cmd.rc == 0 or kubectl_cmd.rc >= 2
+  with_items: "{{ statefulset_pvcs }}"

@@ -1,4 +1,3 @@
----
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -8,25 +7,28 @@ metadata:
     apb_plan_id: '{{ _apb_plan_id }}'
     apb_service_class_id: '{{ _apb_service_class_id }}'
     apb_service_instance_id: '{{ _apb_service_instance_id }}'
+    component: {{ component }}
   name: {{ name }}
   namespace: {{ namespace }}
 spec:
   selector:
     matchLabels:
       app: {{ name }}
+      component: {{ component }}
   serviceName: {{ name }}
   replicas: {{ replicas }}
   template:
     metadata:
       labels:
         app: {{ name }}
-      annotations:
+        component: {{ component }}
 {% if podAnnotations is defined and (podAnnotations | from_yaml) %}
+      annotations:
 {{ podAnnotations | from_yaml | to_nice_yaml(indent=2) | indent(8, true) }}
 {% endif %}
     spec:
-      securityContext:
 {% if securityContext is defined and (securityContext | from_yaml) %}
+      securityContext:
 {{ securityContext | from_yaml | to_nice_yaml(indent=2) | indent(8, true) }}
 {% endif %}
       initContainers:
@@ -66,6 +68,60 @@ spec:
           volumeMounts:
             - name: workdir
               mountPath: /work-dir
+
+{% if bootstrap_debug_enabled is defined and bootstrap_debug_enabled %}
+        - name: bootstrap-debug
+          image: "{{ image_repository }}:{{ image_tag }}"
+          command:
+            - "bash"
+          args:
+            - "-c"
+            - top -b -n 1000000
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
+            - name: REPLICA_SET
+              value: {{ replicaSetName }}
+{% if auth_enabled %}
+            - name: AUTH
+              value: "true"
+            - name: ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ admin_secret_name }}"
+                  key: user
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ admin_secret_name }}"
+                  key: password
+            - name: MONGO_INITDB_DATABASE
+              value: "{{ database }}"
+            - name: MONGO_INITDB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ user_secret_name }}"
+                  key: user
+            - name: MONGO_INITDB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ user_secret_name }}"
+                  key: password
+{% endif %}
+          volumeMounts:
+            - name: workdir
+              mountPath: /work-dir
+            - name: init
+              mountPath: /init
+            - name: configdir
+              mountPath: /data/configdb
+            - name: datadir
+              mountPath: /data/db
+{% endif %}
+
         - name: bootstrap
           image: "{{ image_repository }}:{{ image_tag }}"
           command:
@@ -94,6 +150,18 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: "{{ admin_secret_name }}"
+                  key: password
+            - name: MONGO_INITDB_DATABASE
+              value: "{{ database }}"
+            - name: MONGO_INITDB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ user_secret_name }}"
+                  key: user
+            - name: MONGO_INITDB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ user_secret_name }}"
                   key: password
 {% endif %}
           volumeMounts:
@@ -127,12 +195,16 @@ spec:
             - --dbpath=/data/db
             - --replSet={{ replicaSetName }}
             - --port={{ port }}
-            - --bind_ip_all
+            - --bind_ip
+            - "0.0.0.0"
 {% if auth_enabled %}
             - --auth
 {% endif %}
 {% if tls_enabled %}
-            - --ssl
+            - --clusterAuthMode
+            - x509
+            - --sslMode
+            - requireSSL
             - --sslCAFile=/data/configdb/tls.crt
             - --sslPEMKeyFile=/work-dir/mongo.pem
 {% endif %}
@@ -209,8 +281,8 @@ spec:
   volumeClaimTemplates:
     - metadata:
         name: datadir
-        annotations:
 {% if persistentVolume_annotations is defined and (persistentVolume_annotations | from_yaml) %}
+        annotations:
 {{ persistentVolume_annotations | from_yaml | to_nice_yaml(indent=2) | indent(12, true) }}
 {% endif %}
       spec:

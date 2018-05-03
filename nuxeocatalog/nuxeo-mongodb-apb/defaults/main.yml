@@ -2,6 +2,7 @@
 apb_name: nuxeo-mongodb-apb
 
 default_debug: True
+bootstrap_debug_enabled: False
 
 # Defaults for values we could expect from a broker
 _apb_plan_id: secure-replicaset
@@ -17,4 +18,5 @@ cluster: kubernetes
 
 name: "{{ apb_name }}-{{ _apb_service_instance_id }}"
 namespace: "{{ lookup('env','NAMESPACE') | default('nuxeo', true) }}"
+component: mongodb
 

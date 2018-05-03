@@ -2,4 +2,4 @@
 - hosts: 127.0.0.1
   tasks:
   - name: Test jinja2template
-    template: src=templates/statefulset.yml.j2 dest=jinja2templateout
+    template: src=templates/service.yml.j2 dest=jinja2templateout

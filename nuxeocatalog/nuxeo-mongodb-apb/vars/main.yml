@@ -32,3 +32,6 @@ user_password: "{{ password_lookup if auth_password is undefined else auth_passw
 tls_enabled: "{{ True if _apb_plan_id == 'secure-replicaset' else False }}"
 auth_enabled: "{{ True if _apb_plan_id == 'secure-replicaset' else False }}"
 persistentVolume_enabled: "{{ True }}"
+
+# Variable to hold list of Statefulset PersistentVolumeClaims
+statefulset_pvcs: []

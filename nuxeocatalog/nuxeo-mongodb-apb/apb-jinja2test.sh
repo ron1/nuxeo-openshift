@@ -2,6 +2,7 @@
 ansible-playbook -vvv jinja2test.yml --check --diff --connection=local \
 --extra-vars "namespace=nuxeo" \
 --extra-vars "name=nuxeo-mongodb-apb-0" \
+--extra-vars "component=mongodb" \
 --extra-vars "admin_secret_name=nuxeo-mongodb-apb-0-admin" \
 --extra-vars "ca_secret_name=nuxeo-mongodb-apb-0-ca" \
 --extra-vars "mongodb_configmap_name=nuxeo-mongodb-apb-0-mongodb" \

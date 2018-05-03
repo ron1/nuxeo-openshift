@@ -31,6 +31,7 @@ $ACTION \
 --extra-vars "persistentVolume_annotations='{}'" \
 --extra-vars "tls_casubjectDistinguishedName=/CN=nuxeo-backings.mongodb.svc/OU=engineering/O=nuxeo/L=irvine/S=ca/C=us" \
 --extra-vars "auth_adminUser=admin" \
+--extra-vars "auth_adminPassword=admin" \
 --extra-vars "auth_username=nuxeo" \
 --extra-vars "database=nuxeo" \
 --extra-vars "serviceAnnotations='{}'" \
@@ -48,6 +49,8 @@ $ACTION \
 --extra-vars "readinessProbe_periodSeconds=10" \
 --extra-vars "readinessProbe_successThreshold=1"
 }
+#--extra-vars "auth_adminPassword=password" \
+#--extra-vars "auth_password=password" \
 
 case "$OPERATION" in
     *b*) buildAPB ;;&
@@ -55,5 +58,3 @@ case "$OPERATION" in
     *p*) ACTION=provision runAPB ;;&
 esac
 
-#--extra-vars "auth_adminPassword=password" \
-#--extra-vars "auth_password=password" \

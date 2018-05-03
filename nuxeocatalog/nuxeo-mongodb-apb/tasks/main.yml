@@ -23,7 +23,7 @@
         dest: /tmp/admin_secret.yml
 
     - name: "Create admin secret"
-      shell: kubectl create secret generic {{ admin_secret_name }} --from-file=/tmp/admin_secret.yml
+      shell: kubectl create --filename=/tmp/admin_secret.yml
   when: state == "present" and auth_enabled and auth_existingAdminSecret is undefined
 
 - name: "admin secret state={{ state }}"
@@ -40,7 +40,7 @@
         dest: /tmp/user_secret.yml
 
     - name: "Create user secret"
-      shell: kubectl create secret generic {{ user_secret_name }} --from-file=/tmp/user_secret.yml
+      shell: kubectl create --filename=/tmp/user_secret.yml
   when: state == "present" and auth_enabled and auth_existingUserSecret is undefined
 
 - name: "user secret state={{ state }}"
@@ -57,7 +57,7 @@
         dest: /tmp/init_configmap.yml
 
     - name: "Create init container config map"
-      shell: kubectl create configmap {{ init_configmap_name }} --from-file=/tmp/init_configmap.yml
+      shell: kubectl create --filename=/tmp/init_configmap.yml
   when: state == "present"
 
 - name: "init container config map state={{ state }}"
@@ -82,7 +82,7 @@
         dest: /tmp/mongodb_configmap.yml
 
     - name: "Create mongodb container config map"
-      shell: kubectl create configmap {{ mongodb_configmap_name }} --from-file=/tmp/mongodb_configmap.yml
+      shell: kubectl create --filename=/tmp/mongodb_configmap.yml
   when: state == "present"
 
 - name: "mongodb container config map state={{ state }}"
@@ -115,6 +115,30 @@
 # End of work-around
 
 
+# Work-around k8s_raw refusal to create service with clusterIP: None
+- name: "service state={{ state }}"
+  block:
+    - name: "Create service from template"
+      template:
+        src: service.yml.j2
+        dest: /tmp/service.yml
+
+    - name: "Create service"
+      shell: kubectl create --filename=/tmp/service.yml
+  when: state == "present"
+
+- name: "service state={{ state }}"
+  k8s_raw:
+    state: '{{ state }}'
+    definition: "{{ lookup('template', 'service.yml.j2') | from_yaml }}"
+  when: state == "absent"
+
+
+- name: "set fact statefulset pvcs state={{ state }}"
+  include_tasks: "set_fact_statefulset_pvcs.yml"
+  when: state == "absent"
+
+
 # Work-around k8s_raw inability to create StatefulSet directly
 - name: "statefulset state={{ state }}"
   block:
@@ -138,10 +162,11 @@
 # End of work-around
 
 
-- name: "service state={{ state }}"
-  k8s_raw:
-    state: '{{ state }}'
-    definition: "{{ lookup('template', 'service.yml.j2') | from_yaml }}"
+- name: "statefulset persistentvolumeclaims state={{ state }}"
+  shell: kubectl delete --ignore-not-found=true persistentvolumeclaim {{ item }}
+  with_items: "{{ statefulset_pvcs }}"
+  when: state == "absent"
+
 
 - name: "Update last operation"
   asb_last_operation:

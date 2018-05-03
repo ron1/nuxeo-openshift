@@ -200,6 +200,11 @@ plans:
         type: string
         title: List of node taints to tolerate
         display_group: MongoDB Config
+      - name: configmap
+        default: '{}'
+        type: string
+        title: Entries for the MongoDB config file
+        display_group: MongoDB Config
       - name: livenessProbe_initialDelaySeconds
         default: '5'
         type: number
