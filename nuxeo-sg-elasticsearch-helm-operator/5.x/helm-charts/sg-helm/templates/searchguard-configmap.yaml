@@ -1,0 +1,254 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ template "fullname" . }}-searchguard-config
+  labels:
+    app: {{ template "fullname" . }}
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    release: "{{ .Release.Name }}"
+    heritage: "{{ .Release.Service }}"
+data:
+  sg_config.yml: |-
+    searchguard:
+      dynamic:
+        kibana:
+          multitenancy_enabled: true
+          server_username: kibanaserver
+          index: '.kibana'
+          do_not_fail_on_forbidden: {{ .Values.common.do_not_fail_on_forbidden }}
+        http:
+          xff:
+            enabled: false
+        authc:
+          basic_internal_auth_domain: 
+            http_enabled: true
+            transport_enabled: false
+            order: 0
+            http_authenticator:
+              type: basic
+              challenge: true
+            authentication_backend:
+              type: intern
+          
+  sg_roles.yml: |-
+    # Allows everything, but no changes to searchguard configuration index
+    sg_all_access:
+      cluster:
+        - UNLIMITED
+      indices:
+        '*':
+          '*':
+            - UNLIMITED
+      tenants:
+        adm_tenant: RW
+        test_tenant_ro: RO
+        
+    # For users which use kibana, access to indices must be granted separately
+    sg_kibana_user:
+      cluster:
+        - CLUSTER_COMPOSITE_OPS_RO
+        - indices:data/read/scroll*
+      indices:
+        '*':
+          '*':
+            - READ
+        '?kibana':
+          '*':
+            - INDICES_ALL
+
+    # For the kibana server
+    sg_kibana_server:
+      cluster:
+          - CLUSTER_MONITOR
+          - CLUSTER_COMPOSITE_OPS
+          - cluster:admin/xpack/monitoring*
+          - indices:admin/template*
+      indices:
+        '?kibana':
+          '*':
+            - INDICES_ALL
+        '?reporting*':
+          '*':
+            - INDICES_ALL
+        '?monitoring*':
+          '*':
+            - INDICES_ALL
+
+    # For logstash and beats
+    sg_logstash:
+      cluster:
+        - indices:admin/template/get
+        - indices:admin/template/put
+        - CLUSTER_MONITOR
+        - CLUSTER_COMPOSITE_OPS
+      indices:
+        'logstash-*':
+          '*':
+            - CRUD
+            - CREATE_INDEX
+        '*beat*':
+          '*':
+            - CRUD
+            - CREATE_INDEX
+
+    sg_readall:
+      readonly: true
+      cluster:
+        - CLUSTER_COMPOSITE_OPS_RO
+      indices:
+        '*':
+          '*':
+            - READ
+
+        {{- if .Values.common.roles }}
+{{ toYaml .Values.common.roles | indent 4 }}
+        {{- end }}
+
+
+  sg_roles_mapping.yml: |-
+    sg_all_access:
+      readonly: true
+      backendroles:
+        - admin
+        
+    sg_kibana_server:
+      readonly: true
+      users:
+        - kibanaserver
+
+    sg_kibana_user:
+      readonly: true
+      backendroles:
+        - kibanauser
+
+    sg_readall:
+      readonly: true
+      backendroles:
+        - readall
+
+        {{- if .Values.common.rolesmapping }}
+{{ toYaml .Values.common.rolesmapping | indent 4 }}
+        {{- end }}
+
+  sg_internal_users.yml: |-
+    # This is the internal user database
+    # The hash value is a bcrypt hash and can be generated with plugin/tools/hash.sh
+    admin:
+      readonly: true
+      # Do not change the hash here!
+      # It will be automatically replaced by auto generated password
+      hash: _RPLC_ADMIN_HASH
+      roles:
+        - admin
+ 
+    kibanaserver:
+      readonly: true
+      # Do not change the hash here!
+      # It will be automatically replaced by auto generated password
+      hash: _RPLC_KIBANA_SERVER_HASH
+
+    kibanaro: 
+      readonly: true
+      # Do not change the hash here!
+      # It will be automatically replaced by auto generated password
+      hash: _RPLC_KIBANA_RO_HASH
+      roles:
+        - kibanauser
+        - readall
+
+        {{- if .Values.common.users }}
+{{ toYaml .Values.common.users | indent 4 }}
+        {{- end }}
+        
+  sg_action_groups.yml: |-
+    UNLIMITED:
+      - "*"
+
+    ###### INDEX LEVEL ######
+
+    INDICES_ALL:
+      - "indices:*"
+
+    # for backward compatibility
+    ALL:
+      - INDICES_ALL
+
+    MANAGE:
+      - "indices:monitor/*"
+      - "indices:admin/*"
+
+    CREATE_INDEX:
+      - "indices:admin/create"
+      - "indices:admin/mapping/put"
+
+    MANAGE_ALIASES:
+      - "indices:admin/aliases*"
+
+    # for backward compatibility
+    MONITOR:
+      - INDICES_MONITOR
+
+    INDICES_MONITOR:
+      - "indices:monitor/*"
+
+    DATA_ACCESS:
+      - "indices:data/*"
+      - CRUD
+
+    WRITE:
+      - "indices:data/write*"
+      - "indices:admin/mapping/put"
+
+    READ:
+      - "indices:data/read*"
+      - "indices:admin/mappings/fields/get*"
+
+    DELETE:
+      - "indices:data/write/delete*"
+
+    CRUD:
+      - READ
+      - WRITE
+
+    SEARCH:
+      - "indices:data/read/search*"
+      - "indices:data/read/msearch*"
+      - SUGGEST
+
+    SUGGEST:
+      - "indices:data/read/suggest*"
+
+    INDEX:
+      - "indices:data/write/index*"
+      - "indices:data/write/update*"
+      - "indices:admin/mapping/put"
+      - "indices:data/write/bulk*"
+
+    GET:
+      - "indices:data/read/get*"
+      - "indices:data/read/mget*"
+
+    ###### CLUSTER LEVEL ######
+
+    CLUSTER_ALL:
+      - "cluster:*"
+
+    CLUSTER_MONITOR:
+      - "cluster:monitor/*"
+
+    CLUSTER_COMPOSITE_OPS_RO:
+      - "indices:data/read/mget"
+      - "indices:data/read/msearch"
+      - "indices:data/read/mtv"
+      - "indices:data/read/coordinate-msearch*"
+      - "indices:admin/aliases/exists*"
+      - "indices:admin/aliases/get*"
+
+    CLUSTER_COMPOSITE_OPS:
+      - "indices:data/write/bulk"
+      - "indices:admin/aliases*"
+      - CLUSTER_COMPOSITE_OPS_RO
+      
+    MANAGE_SNAPSHOTS:
+      - "cluster:admin/snapshot/*"
+      - "cluster:admin/repository/*"

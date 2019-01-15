@@ -1,0 +1,24 @@
+apiVersion: extensions/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  labels:
+    app: {{ template "fullname" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+  name: {{ template "fullname" . }}
+spec:
+  privileged: true
+  fsGroup:
+    rule: RunAsAny
+  defaultAddCapabilities:
+    - IPC_LOCK
+    - SYS_RESOURCE
+  runAsUser:
+    rule: RunAsAny
+  seLinux:
+    rule: MustRunAs
+  supplementalGroups:
+    rule: RunAsAny
+  volumes:
+    - '*'

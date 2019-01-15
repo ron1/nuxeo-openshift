@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nuxeo-sg-elasticsearch-helm-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: nuxeo-sg-elasticsearch-helm-operator
+  template:
+    metadata:
+      labels:
+        name: nuxeo-sg-elasticsearch-helm-operator
+    spec:
+      serviceAccountName: nuxeo-sg-elasticsearch-helm-operator
+      containers:
+        - name: nuxeo-sg-elasticsearch-helm-operator
+          # Replace this with the built image name
+          image: docker-registry.default.svc.cluster.local:5000/nuxeo/nuxeo-sg-elasticsearch-helm-operator:v0.0.1
+          ports:
+          - containerPort: 60000
+            name: metrics
+          imagePullPolicy: Always
+          env:
+            - name: WATCH_NAMESPACE
+              value: ""
+            - name: OPERATOR_NAME
+              value: "nuxeo-sg-elasticsearch-helm-operator"
